@@ -89,4 +89,8 @@ public class MatchEvent {
     public String getDismissalType() { return dismissalType; }
     public String getNote() { return note; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void reassignBowler(Player bowler) {
+        this.bowler = bowler;
+    }
 }

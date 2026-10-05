@@ -43,4 +43,10 @@ public class Player {
     public String getRole() { return role; }
     public Integer getJerseyNumber() { return jerseyNumber; }
     public Team getTeam() { return team; }
+
+    public void updateProfile(String name, String role, Integer jerseyNumber) {
+        this.name = name;
+        this.role = role;
+        this.jerseyNumber = jerseyNumber;
+    }
 }

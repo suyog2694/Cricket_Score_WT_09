@@ -1,6 +1,7 @@
 package com.cricketscore.api;
 
 import com.cricketscore.api.ApiDtos.DeliveryRequest;
+import com.cricketscore.api.ApiDtos.BowlerCorrectionRequest;
 import com.cricketscore.api.ApiDtos.MatchRequest;
 import com.cricketscore.api.ApiDtos.MatchView;
 import com.cricketscore.model.CricketMatch;
@@ -11,6 +12,7 @@ import com.cricketscore.service.ScoreService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,6 +50,12 @@ public class MatchController {
     @ResponseStatus(HttpStatus.CREATED)
     public MatchView record(@PathVariable Long id, @RequestBody DeliveryRequest request) {
         MatchEvent ignored = deliveries.record(id, request);
+        return scores.getScore(id);
+    }
+
+    @PatchMapping("/{id}/overs/current/bowler")
+    public MatchView correctCurrentOverBowler(@PathVariable Long id, @RequestBody BowlerCorrectionRequest request) {
+        deliveries.reassignCurrentOver(id, request.bowlerId());
         return scores.getScore(id);
     }
 

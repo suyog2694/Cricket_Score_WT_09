@@ -30,4 +30,9 @@ public class Team {
     public Long getId() { return id; }
     public String getName() { return name; }
     public String getShortName() { return shortName; }
+
+    public void updateIdentity(String name, String shortName) {
+        this.name = name;
+        this.shortName = shortName;
+    }
 }

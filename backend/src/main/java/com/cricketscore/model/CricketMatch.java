@@ -71,6 +71,11 @@ public class CricketMatch {
     public Team getTeamB() { return teamB; }
     public Team getBattingFirstTeam() { return battingFirstTeam; }
 
+    public void updateFixtureDetails(String title, String venue) {
+        this.title = title;
+        this.venue = venue;
+    }
+
     public Team battingTeam() {
         return currentInnings % 2 == 1 ? battingFirstTeam : opposing(battingFirstTeam);
     }

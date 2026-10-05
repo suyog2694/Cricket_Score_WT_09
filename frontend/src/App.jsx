@@ -24,6 +24,18 @@ function initials(name = '') {
   return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 }
 
+function nextBowlerId(players, previousBowlerId) {
+  return players.find((player) => player.id !== previousBowlerId
+    && ['Bowler', 'All-rounder'].includes(player.role))?.id
+    ?? players.find((player) => player.id !== previousBowlerId)?.id
+    ?? players[0]?.id
+    ?? ''
+}
+
+function canCreditBatterRuns(extraType) {
+  return extraType === 'NONE' || extraType === 'NO_BALL'
+}
+
 function App() {
   const [section, setSection] = useState('live')
   const [matches, setMatches] = useState([])
@@ -36,10 +48,32 @@ function App() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isCorrectingOver, setIsCorrectingOver] = useState(false)
   const [showMatchForm, setShowMatchForm] = useState(false)
   const [delivery, setDelivery] = useState({ strikerId: '', nonStrikerId: '', bowlerId: '', batterRuns: 0, extras: 1, extraType: 'NONE', wicket: false, dismissalType: 'Bowled' })
   const [teamForm, setTeamForm] = useState({ name: '', shortName: '' })
   const [playerForm, setPlayerForm] = useState({ name: '', role: 'Batter', jerseyNumber: '' })
+  const battingPlayers = squads[score?.battingTeam?.id] || []
+  const bowlingPlayers = squads[score?.bowlingTeam?.id] || []
+  const managedPlayers = squads[manageTeamId] || []
+  const liveMatches = matches.filter((match) => match.status === 'LIVE')
+  const activeBowler = score?.bowlers.find((bowler) => bowler.currentBowler) || null
+  const invalidCurrentOverBowler = score?.bowlers.find((bowler) => bowler.currentOver
+    && !['Bowler', 'All-rounder'].includes(bowler.role)) || null
+  const needsOverCorrection = Boolean(invalidCurrentOverBowler)
+    || (score?.bowlers.filter((bowler) => bowler.currentOver).length || 0) > 1
+  const inningsBowlingOptions = (score?.bowlers || [])
+    .filter((bowler) => ['Bowler', 'All-rounder'].includes(bowler.role))
+    .map(({ id, name, role }) => ({ id, name, role }))
+  const eligibleRosterBowlers = bowlingPlayers.filter((player) => ['Bowler', 'All-rounder'].includes(player.role))
+  const correctionOptions = [...inningsBowlingOptions, ...eligibleRosterBowlers.filter((player) =>
+    !inningsBowlingOptions.some((current) => current.id === player.id))]
+    .filter((player) => player.id !== score?.previousOverBowlerId)
+  const bowlingOptions = needsOverCorrection
+    ? correctionOptions
+    : score?.currentBowlerId
+      ? bowlingPlayers.filter((player) => player.id === score.currentBowlerId)
+      : eligibleRosterBowlers.filter((player) => player.id !== score?.previousOverBowlerId)
 
   async function refresh(preferredId = selectedId, quiet = false) {
     if (!quiet) setIsRefreshing(true)
@@ -76,10 +110,16 @@ function App() {
         ...current,
         strikerId: batting[0]?.id || '',
         nonStrikerId: batting[1]?.id || '',
-        bowlerId: bowling[0]?.id || '',
+        bowlerId: score.currentBowlerId || nextBowlerId(bowling, score.previousOverBowlerId),
       }))
     }).catch((problem) => setError(problem.message))
   }, [score?.battingTeam?.id, score?.bowlingTeam?.id])
+
+  useEffect(() => {
+    if (!score || !bowlingPlayers.length) return
+    const bowlerId = score.currentBowlerId || nextBowlerId(bowlingPlayers, score.previousOverBowlerId)
+    setDelivery((current) => ({ ...current, bowlerId }))
+  }, [score?.currentBowlerId, score?.previousOverBowlerId, score?.legalBalls, bowlingPlayers])
 
   useEffect(() => {
     if (!manageTeamId) return
@@ -145,15 +185,28 @@ function App() {
     } catch (problem) { setError(problem.message) }
   }
 
-  const battingPlayers = squads[score?.battingTeam?.id] || []
-  const bowlingPlayers = squads[score?.bowlingTeam?.id] || []
-  const managedPlayers = squads[manageTeamId] || []
-  const liveMatches = matches.filter((match) => match.status === 'LIVE')
+  async function correctCurrentOverBowler() {
+    setIsCorrectingOver(true)
+    try {
+      const updated = await api(`/matches/${selectedId}/overs/current/bowler`, {
+        method: 'PATCH',
+        body: JSON.stringify({ bowlerId: Number(delivery.bowlerId) }),
+      })
+      setScore(updated)
+      setMatches((current) => current.map((match) => match.id === updated.id ? updated : match))
+      setNotice('Current-over bowler assignment corrected.')
+      window.setTimeout(() => setNotice(''), 2600)
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setIsCorrectingOver(false)
+    }
+  }
 
   return (
     <div className="app-shell">
       <aside className="rail">
-        <div className="brand-lockup"><span className="brand-mark"><Activity size={19} strokeWidth={2.8} /></span><span>BOUNDARY<span className="brand-period">.</span></span></div>
+        <div className="brand-lockup"><span className="brand-mark"><Activity size={19} strokeWidth={2.8} /></span><span className="brand-wordmark">Score with <strong>Suyog</strong></span></div>
         <div className="rail-label">WORKSPACE</div>
         <nav className="primary-nav" aria-label="Main navigation">
           <button className={section === 'live' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('live')}><Activity size={17} />Live desk</button>
@@ -175,7 +228,7 @@ function App() {
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumb"><span>BOUNDARY</span><span className="crumb-slash">/</span><strong>{section === 'live' ? 'LIVE DESK' : 'TEAM MANAGEMENT'}</strong></div>
+          <div className="breadcrumb"><span>SCORE WITH SUYOG</span><span className="crumb-slash">/</span><strong>{section === 'live' ? 'LIVE DESK' : 'TEAM MANAGEMENT'}</strong></div>
           <div className="top-actions"><span className="live-count"><span />{liveMatches.length} LIVE</span><button className="icon-button refresh-button" title="Refresh scores" onClick={() => refresh()}><RefreshCw size={16} className={isRefreshing ? 'spinning' : ''} /></button><div className="operator"><span className="operator-avatar">SC</span><span>Scorekeeper</span></div></div>
         </header>
 
@@ -186,6 +239,7 @@ function App() {
           <div className="page-content">
             <div className="page-heading">
               <div><div className="eyebrow"><span className="eyebrow-line" />MATCH OPERATIONS</div><h1>Live desk<span className="title-dot">.</span></h1><p>Every delivery, every detail. Updated in real time.</p></div>
+              <PlayerFeature />
               <div className="heading-actions"><span className="sync-label"><span className="sync-pulse" />AUTO SYNC · 5 SEC</span><button className="button button-dark" onClick={() => setShowMatchForm(true)}><Plus size={16} />New match</button></div>
             </div>
 
@@ -215,9 +269,14 @@ function App() {
                       {score.batters.map((batter) => <tr key={batter.id}><td><span className="player-cell"><span className="player-avatar">{initials(batter.name)}</span><span>{batter.name}{batter.onStrike && <b className="strike-mark">*</b>}</span></span></td><td className="number-cell strong-cell">{batter.runs}</td><td className="number-cell">{batter.balls}</td><td className="number-cell">{batter.fours}</td><td className="number-cell">{batter.sixes}</td><td className="number-cell">{Number(batter.strikeRate).toFixed(1)}</td></tr>)}
                       {!score.batters.length && <tr><td colSpan="6" className="table-empty">No deliveries recorded yet.</td></tr>}
                     </tbody></table></div>
-                    <div className="subtable-heading"><div><div className="panel-kicker">IN THE ATTACK</div><h3>Bowling figures</h3></div><span className="panel-caption">{score.bowlingTeam.shortName}</span></div>
+                    <div className="scorecard-totals"><span>EXTRAS</span><strong>{score.extras ?? 0}</strong><span>INNINGS TOTAL</span><strong>{score.runs}/{score.wickets}</strong></div>
+                    <div className="subtable-heading"><div><div className="panel-kicker">IN THE ATTACK</div><h3>Bowling figures</h3></div><span className="panel-caption">{needsOverCorrection ? 'CURRENT OVER · CORRECTION NEEDED' : activeBowler ? `NOW · ${activeBowler.name}` : `${score.bowlingTeam.shortName} · NEXT OVER`}</span></div>
                     <div className="table-scroll"><table><thead><tr><th>BOWLER</th><th>O</th><th>R</th><th>W</th><th>ECON</th></tr></thead><tbody>
-                      {score.bowlers.map((bowler) => <tr key={bowler.id}><td><span className="player-cell"><span className="bowler-avatar">{initials(bowler.name)}</span><span>{bowler.name}</span></span></td><td className="number-cell">{bowler.overs}</td><td className="number-cell">{bowler.runs}</td><td className="number-cell strong-cell">{bowler.wickets}</td><td className="number-cell">{Number(bowler.economy).toFixed(1)}</td></tr>)}
+                      {score.bowlers.map((bowler) => {
+                        const ineligible = !['Bowler', 'All-rounder'].includes(bowler.role)
+                        const needsCorrection = needsOverCorrection && bowler.currentOver && ineligible
+                        return <tr className={needsCorrection ? 'invalid-bowler-row' : bowler.currentBowler ? 'current-bowler-row' : ''} key={bowler.id}><td><span className="player-cell"><span className="bowler-avatar">{initials(bowler.name)}</span><span>{bowler.name}{needsCorrection && <b className="invalid-bowler-mark">CHECK</b>}{bowler.currentBowler && <b className="current-bowler-mark">NOW</b>}</span></span></td><td className="number-cell">{bowler.overs}</td><td className="number-cell">{bowler.runs}</td><td className="number-cell strong-cell">{bowler.wickets}</td><td className="number-cell">{Number(bowler.economy).toFixed(1)}</td></tr>
+                      })}
                       {!score.bowlers.length && <tr><td colSpan="5" className="table-empty">No bowling figures yet.</td></tr>}
                     </tbody></table></div>
                   </section>
@@ -225,7 +284,7 @@ function App() {
                   <section className="panel event-panel">
                     <div className="panel-heading"><div><div className="panel-kicker">BALL BY BALL</div><h2>Recent events</h2></div><span className="panel-caption">LATEST FIRST</span></div>
                     <div className="event-list">
-                      {score.recentEvents.map((item, index) => <div className="event-row" key={item.id}><span className={`event-over ${index === 0 ? 'current-over' : ''}`}>{item.overLabel}</span><span className={`event-token ${item.wicket ? 'wicket-token' : item.runs === 4 || item.runs === 6 ? 'boundary-token' : ''}`}>{item.wicket ? 'W' : item.runs}</span><span className="event-description">{item.description}</span><span className="event-time">{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>)}
+                      {score.recentEvents.map((item, index) => <div className="event-row" key={item.id}><span className={`event-over ${index === 0 ? 'current-over' : ''}`}>{item.overLabel}</span><span className={`event-token ${item.wicket ? 'wicket-token' : item.runs === 4 || item.runs === 6 ? 'scoring-shot-token' : ''}`}>{item.wicket ? 'W' : item.runs}</span><span className="event-description">{item.description}</span><span className="event-time">{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>)}
                       {!score.recentEvents.length && <div className="table-empty">Your first ball is waiting to be scored.</div>}
                     </div>
                   </section>
@@ -237,10 +296,12 @@ function App() {
                     <form onSubmit={recordDelivery}>
                       <label className="field-label">STRIKER<select required value={delivery.strikerId} onChange={(event) => setDelivery({ ...delivery, strikerId: event.target.value })}><option value="">Select batter</option>{battingPlayers.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
                       <label className="field-label">NON-STRIKER<select value={delivery.nonStrikerId} onChange={(event) => setDelivery({ ...delivery, nonStrikerId: event.target.value })}><option value="">Select batter</option>{battingPlayers.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
-                      <label className="field-label">BOWLER<select required value={delivery.bowlerId} onChange={(event) => setDelivery({ ...delivery, bowlerId: event.target.value })}><option value="">Select bowler</option>{bowlingPlayers.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
-                      <div className="field-label">BATTER RUNS<div className="run-picker">{[0, 1, 2, 3, 4, 6].map((runs) => <button type="button" key={runs} className={Number(delivery.batterRuns) === runs ? 'run-option selected' : 'run-option'} onClick={() => setDelivery({ ...delivery, batterRuns: runs })}>{runs === 0 ? '·' : runs}</button>)}</div></div>
-                      <div className="form-split"><label className="field-label">EXTRA TYPE<select value={delivery.extraType} onChange={(event) => setDelivery({ ...delivery, extraType: event.target.value })}>{EXTRA_TYPES.map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}</select></label><label className="field-label">EXTRAS<input type="number" min="0" value={delivery.extraType === 'NONE' ? 0 : delivery.extras} onChange={(event) => setDelivery({ ...delivery, extras: event.target.value })} disabled={delivery.extraType === 'NONE'} /></label></div>
-                      <div className="scorer-footer"><label className="wicket-toggle"><input type="checkbox" checked={delivery.wicket} onChange={(event) => setDelivery({ ...delivery, wicket: event.target.checked })} /><span className="custom-check" /><span>Wicket</span></label>{delivery.wicket && <select className="dismissal-select" value={delivery.dismissalType} onChange={(event) => setDelivery({ ...delivery, dismissalType: event.target.value })}><option>Bowled</option><option>Caught</option><option>LBW</option><option>Run out</option><option>Stumped</option></select>}<button className="button button-lime submit-ball" type="submit" disabled={score.status !== 'LIVE' || !battingPlayers.length || !bowlingPlayers.length}>Save ball <ArrowRight size={15} /></button></div>
+                      <label className="field-label">{invalidCurrentOverBowler ? 'CORRECT CURRENT OVER BOWLER' : activeBowler ? 'CURRENT BOWLER' : 'NEXT OVER BOWLER'}<select required value={delivery.bowlerId} onChange={(event) => setDelivery({ ...delivery, bowlerId: event.target.value })}><option value="">Select bowler</option>{bowlingOptions.map((player) => <option key={player.id} value={player.id}>{player.name}{activeBowler ? ' · current over' : ` · ${player.role}`}</option>)}</select></label>
+                      <span className="bowler-guidance">{invalidCurrentOverBowler ? `${invalidCurrentOverBowler.name} is ineligible. Choose the actual bowler and correct the over.` : needsOverCorrection ? 'Multiple bowlers are recorded in this over. Select the actual bowler.' : activeBowler ? `${activeBowler.name} completes this over.` : score.previousOverBowlerId ? 'Choose someone other than the previous over’s bowler.' : 'Select a bowler to start the innings.'}</span>
+                      {needsOverCorrection && <button type="button" className="button button-quiet correct-over-button" onClick={correctCurrentOverBowler} disabled={isCorrectingOver || !delivery.bowlerId}><ArrowDownUp size={14} />{isCorrectingOver ? 'Correcting over…' : 'Correct current over'}</button>}
+                      <div className="field-label">BATTER RUNS<div className="run-picker">{[0, 1, 2, 3, 4, 6].map((runs) => <button type="button" key={runs} disabled={!canCreditBatterRuns(delivery.extraType)} className={Number(delivery.batterRuns) === runs ? 'run-option selected' : 'run-option'} onClick={() => setDelivery({ ...delivery, batterRuns: runs })}>{runs === 0 ? '·' : runs}</button>)}</div>{!canCreditBatterRuns(delivery.extraType) && <span className="bowler-guidance">These runs are recorded as extras, not batter runs.</span>}</div>
+                      <div className="form-split"><label className="field-label">EXTRA TYPE<select value={delivery.extraType} onChange={(event) => setDelivery({ ...delivery, extraType: event.target.value, batterRuns: canCreditBatterRuns(event.target.value) ? delivery.batterRuns : 0 })}>{EXTRA_TYPES.map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}</select></label><label className="field-label">EXTRAS<input type="number" min={delivery.extraType === 'WIDE' || delivery.extraType === 'NO_BALL' ? 1 : 0} value={delivery.extraType === 'NONE' ? 0 : delivery.extras} onChange={(event) => setDelivery({ ...delivery, extras: event.target.value })} disabled={delivery.extraType === 'NONE'} /></label></div>
+                      <div className="scorer-footer"><label className="wicket-toggle"><input type="checkbox" checked={delivery.wicket} onChange={(event) => setDelivery({ ...delivery, wicket: event.target.checked })} /><span className="custom-check" /><span>Wicket</span></label>{delivery.wicket && <select className="dismissal-select" value={delivery.dismissalType} onChange={(event) => setDelivery({ ...delivery, dismissalType: event.target.value })}><option>Bowled</option><option>Caught</option><option>LBW</option><option>Run out</option><option>Stumped</option></select>}<button className="button button-lime submit-ball" type="submit" disabled={score.status !== 'LIVE' || !battingPlayers.length || !bowlingPlayers.length || Boolean(invalidCurrentOverBowler)}>Save ball <ArrowRight size={15} /></button></div>
                     </form>
                   </section>
                   <section className="panel innings-panel"><div className="panel-heading"><div><div className="panel-kicker">MATCH STORY</div><h2>Innings summary</h2></div><CircleHelp size={17} className="muted-icon" /></div>
@@ -250,19 +311,19 @@ function App() {
                 </div>
               </div>
             </> : <div className="empty-state no-match"><span className="empty-ball"><Activity size={22} /></span><h2>No match on the board</h2><p>Create a match to start recording live scores.</p><button className="button button-dark" onClick={() => setShowMatchForm(true)}><Plus size={16} />Create match</button></div>}
-            <footer className="page-footer"><span>BOUNDARY LIVE DESK</span><span>MADE FOR THE MOMENT BETWEEN BALLS</span><button onClick={() => setSection('teams')}><Users size={13} /> Manage squads</button></footer>
+            <footer className="page-footer"><span>SCORE WITH SUYOG</span><span>MADE FOR THE MOMENT BETWEEN BALLS</span><button onClick={() => setSection('teams')}><Users size={13} /> Manage squads</button></footer>
           </div>
         ) : (
           <div className="page-content teams-page">
-            <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />ROSTER MANAGEMENT</div><h1>Teams & players<span className="title-dot">.</span></h1><p>Keep your squads match-ready.</p></div><div className="heading-actions"><span className="roster-count"><Users size={15} />{teams.length} TEAMS</span></div></div>
+            <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />ROSTER MANAGEMENT</div><h1>Teams & players<span className="title-dot">.</span></h1><p>Keep your squads match-ready.</p></div><PlayerFeature /><div className="heading-actions"><span className="roster-count"><Users size={15} />{teams.length} TEAMS</span></div></div>
             <div className="team-management-grid">
-              <section className="panel team-form-panel"><div className="panel-heading"><div><div className="panel-kicker">BUILD YOUR LINE-UP</div><h2>Add a team</h2></div><span className="stat-icon orange"><Shield size={17} /></span></div><form onSubmit={saveTeam} className="management-form"><label className="field-label">TEAM NAME<input required value={teamForm.name} onChange={(event) => setTeamForm({ ...teamForm, name: event.target.value })} placeholder="e.g. Mumbai Falcons" /></label><label className="field-label">SHORT NAME<input required maxLength="5" value={teamForm.shortName} onChange={(event) => setTeamForm({ ...teamForm, shortName: event.target.value.toUpperCase() })} placeholder="e.g. MUF" /></label><button className="button button-dark" type="submit"><Plus size={16} />Add team</button></form></section>
+              <section className="panel team-form-panel"><div className="panel-heading"><div><div className="panel-kicker">BUILD YOUR LINE-UP</div><h2>Add a team</h2></div><span className="stat-icon orange"><Shield size={17} /></span></div><form onSubmit={saveTeam} className="management-form"><label className="field-label">TEAM NAME<input required value={teamForm.name} onChange={(event) => setTeamForm({ ...teamForm, name: event.target.value })} placeholder="e.g. India" /></label><label className="field-label">SHORT NAME<input required maxLength="5" value={teamForm.shortName} onChange={(event) => setTeamForm({ ...teamForm, shortName: event.target.value.toUpperCase() })} placeholder="e.g. IND" /></label><button className="button button-dark" type="submit"><Plus size={16} />Add team</button></form></section>
               <section className="panel squad-panel"><div className="panel-heading"><div><div className="panel-kicker">SQUAD ROSTER</div><h2>Players</h2></div><span className="roster-count"><Users size={14} />{managedPlayers.length} PLAYERS</span></div>
                 <label className="field-label team-select-label">SELECT TEAM<select value={manageTeamId} onChange={(event) => setManageTeamId(event.target.value)}><option value="">Choose a team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
                 {manageTeamId && <><form onSubmit={savePlayer} className="player-add-form"><input required value={playerForm.name} onChange={(event) => setPlayerForm({ ...playerForm, name: event.target.value })} placeholder="Player name" aria-label="Player name" /><select value={playerForm.role} onChange={(event) => setPlayerForm({ ...playerForm, role: event.target.value })} aria-label="Player role">{ROLE_OPTIONS.map((role) => <option key={role}>{role}</option>)}</select><input type="number" min="1" max="999" value={playerForm.jerseyNumber} onChange={(event) => setPlayerForm({ ...playerForm, jerseyNumber: event.target.value })} placeholder="#" aria-label="Jersey number" /><button className="button button-lime" type="submit"><Plus size={15} />Add player</button></form><div className="roster-list">{managedPlayers.map((player, index) => <div className="roster-row" key={player.id}><span className="roster-index">{String(index + 1).padStart(2, '0')}</span><span className="player-avatar">{initials(player.name)}</span><span className="roster-name">{player.name}<small>{player.role}</small></span><span className="jersey-number">{player.jerseyNumber ? `#${player.jerseyNumber}` : '—'}</span></div>)}{!managedPlayers.length && <div className="table-empty">No players in this squad yet.</div>}</div></>}
               </section>
             </div>
-            <footer className="page-footer"><span>BOUNDARY ROSTER DESK</span><span>ROSTERS ARE STORED WITH YOUR MATCH DATA</span><button onClick={() => setSection('live')}><Activity size={13} />Back to live desk</button></footer>
+            <footer className="page-footer"><span>SCORE WITH SUYOG</span><span>ROSTERS ARE STORED WITH YOUR MATCH DATA</span><button onClick={() => setSection('live')}><Activity size={13} />Back to live desk</button></footer>
           </div>
         )}
       </main>
@@ -278,6 +339,26 @@ function App() {
           setNotice('Match created. Add squads and start scoring.')
         } catch (problem) { setError(problem.message) }
       }} />}
+    </div>
+  )
+}
+
+function PlayerFeature() {
+  return (
+    <div className="player-feature" aria-label="Featured international cricketers">
+      <a className="feature-main" href="https://commons.wikimedia.org/wiki/File:Virat_Kohli_batting_2013.jpg" target="_blank" rel="noreferrer">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/2/2b/Virat_Kohli_batting_2013.jpg" alt="Virat Kohli batting for India" />
+        <span className="feature-main-copy"><small>PLAYER SPOTLIGHT</small><strong>Virat Kohli</strong><span>India · No. 18</span></span>
+        <span className="photo-credit">Dee03 · CC BY-SA 4.0</span>
+      </a>
+      <a className="feature-side feature-rohit" href="https://commons.wikimedia.org/wiki/File:Rohit_Sharma_Batting.jpg" target="_blank" rel="noreferrer">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/9/98/Rohit_Sharma_Batting.jpg" alt="Rohit Sharma batting for India" loading="lazy" />
+        <span>Rohit Sharma · Bahnfrend · CC BY-SA 4.0</span>
+      </a>
+      <a className="feature-side feature-root" href="https://commons.wikimedia.org/wiki/File:England_captain_Joe_Root_2019.jpg" target="_blank" rel="noreferrer">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/1/19/England_captain_Joe_Root_2019.jpg" alt="Joe Root representing England" loading="lazy" />
+        <span>Joe Root · Ben Sutherland · CC BY 2.0</span>
+      </a>
     </div>
   )
 }

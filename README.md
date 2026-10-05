@@ -1,6 +1,6 @@
-# Boundary Cricket Score
+# Score with Suyog
 
-A live cricket match desk built with Spring Boot, MySQL, and React/Vite. Match deliveries are stored as events; innings totals and player figures are calculated from those records.
+A live cricket match desk built with Spring Boot, MySQL, and React/Vite. Match deliveries are stored as events; innings totals and player figures are calculated from those records. The starter database includes India, England, and Australia squads.
 
 ## Requirements
 
@@ -49,6 +49,7 @@ The backend also accepts standard Spring environment variables `DB_URL`, `DB_USE
 | `POST` | `/api/matches` | Create a live match |
 | `GET` | `/api/matches/{id}` | Get score, figures, innings, and recent events |
 | `POST` | `/api/matches/{id}/events` | Record a delivery |
+| `PATCH` | `/api/matches/{id}/overs/current/bowler` | Correct all saved deliveries in the current over to a selected bowler |
 | `POST` | `/api/matches/{id}/innings/next` | Advance to the second innings or complete the match |
 | `POST` | `/api/matches/{id}/finish` | Mark a match completed |
 | `GET` | `/api/teams` | List teams |
@@ -56,7 +57,13 @@ The backend also accepts standard Spring environment variables `DB_URL`, `DB_USE
 | `GET` | `/api/teams/{teamId}/players` | List a team's players |
 | `POST` | `/api/teams/{teamId}/players` | Add a player to a team |
 
-Import `postman/Boundary Cricket Score.postman_collection.json` into Postman. The collection includes API requests and basic response assertions. Use `http://localhost:8080` as the `baseUrl` collection variable.
+Import `postman/Score with Suyog.postman_collection.json` into Postman. The collection includes API requests and basic response assertions. Use `http://localhost:8080` as the `baseUrl` collection variable.
+
+## Photo credits
+
+- Virat Kohli batting: Dee03, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Virat_Kohli_batting_2013.jpg)
+- Rohit Sharma batting: Bahnfrend, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rohit_Sharma_Batting.jpg)
+- Joe Root: Ben Sutherland, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/), [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:England_captain_Joe_Root_2019.jpg)
 
 ## Delivery request example
 
@@ -75,4 +82,4 @@ Import `postman/Boundary Cricket Score.postman_collection.json` into Postman. Th
 }
 ```
 
-`WIDE` and `NO_BALL` do not count as legal balls. Batting and bowling figures, run rate, over labels, and innings totals are derived from the saved delivery events.
+`WIDE` and `NO_BALL` do not count as legal balls. Wide, bye, and leg-bye runs are extras, not batter runs; the dashboard shows extras separately so batter totals reconcile with the innings score. Illegal deliveries use `WD`/`NB` labels on the preceding legal-ball slot to distinguish them from the next ball. Batting and bowling figures, run rate, and innings totals are derived from the saved delivery events.

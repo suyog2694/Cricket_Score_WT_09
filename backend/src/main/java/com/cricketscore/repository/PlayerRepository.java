@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PlayerRepository extends JpaRepository<Player, Long> {
     List<Player> findByTeamIdOrderByName(Long teamId);
+    List<Player> findByTeamIdOrderByIdAsc(Long teamId);
 }
