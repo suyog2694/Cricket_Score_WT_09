@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/cricket_score?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

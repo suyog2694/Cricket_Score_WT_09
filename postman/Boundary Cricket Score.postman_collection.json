@@ -1,0 +1,99 @@
+{
+  "info": {
+    "name": "Boundary Cricket Score",
+    "description": "Smoke tests and examples for the live cricket score API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "matchId", "value": "1" },
+    { "key": "teamId", "value": "1" },
+    { "key": "teamBId", "value": "2" },
+    { "key": "createdMatchId", "value": "" },
+    { "key": "playerId", "value": "1" },
+    { "key": "otherPlayerId", "value": "2" },
+    { "key": "bowlerId", "value": "9" }
+  ],
+  "item": [
+    {
+      "name": "Matches",
+      "item": [
+        {
+          "name": "List matches and scorecards",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/matches" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('matches respond successfully', () => pm.response.to.have.status(200));", "pm.test('response is a list', () => pm.expect(pm.response.json()).to.be.an('array'));", "if (pm.response.json().length) pm.collectionVariables.set('matchId', pm.response.json()[0].id);"] } }]
+        },
+        {
+          "name": "Get live score and summary",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/matches/{{matchId}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('score responds successfully', () => pm.response.to.have.status(200));", "pm.test('score contains batting and bowling figures', () => { const score = pm.response.json(); pm.expect(score).to.have.property('batters'); pm.expect(score).to.have.property('bowlers'); pm.expect(score).to.have.property('innings'); });"] } }]
+        },
+        {
+          "name": "Record a dot ball",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"strikerId\": {{playerId}},\n  \"nonStrikerId\": {{otherPlayerId}},\n  \"bowlerId\": {{bowlerId}},\n  \"batterRuns\": 0,\n  \"extras\": 0,\n  \"extraType\": \"NONE\",\n  \"wicket\": false\n}" },
+            "url": "{{baseUrl}}/api/matches/{{matchId}}/events"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('delivery is recorded', () => pm.response.to.have.status(201));", "pm.test('score response includes recent events', () => pm.expect(pm.response.json()).to.have.property('recentEvents'));"] } }]
+        },
+        {
+          "name": "Start next innings",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/matches/{{matchId}}/innings/next" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('innings advances', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Finish match",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/matches/{{matchId}}/finish" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('match completes', () => pm.response.to.have.status(200));", "pm.test('status is completed', () => pm.expect(pm.response.json().status).to.eql('COMPLETED'));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Teams and players",
+      "item": [
+        {
+          "name": "List teams",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/teams" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('teams respond successfully', () => pm.response.to.have.status(200));", "if (pm.response.json().length) pm.collectionVariables.set('teamId', pm.response.json()[0].id);", "if (pm.response.json().length > 1) pm.collectionVariables.set('teamBId', pm.response.json()[1].id);"] } }]
+        },
+        {
+          "name": "List team players",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/teams/{{teamId}}/players" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('roster responds successfully', () => pm.response.to.have.status(200));", "pm.test('roster is a list', () => pm.expect(pm.response.json()).to.be.an('array'));"] } }]
+        },
+        {
+          "name": "Create a team",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman XI\",\n  \"shortName\": \"PMXI\"\n}" },
+            "url": "{{baseUrl}}/api/teams"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('team is created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('teamId', pm.response.json().id);"] } }]
+        },
+        {
+          "name": "Add player to team",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Batter\",\n  \"role\": \"Batter\",\n  \"jerseyNumber\": 27\n}" },
+            "url": "{{baseUrl}}/api/teams/{{teamId}}/players"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('player is created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('playerId', pm.response.json().id);"] } }]
+        },
+        {
+          "name": "Create a live match",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman fixture\",\n  \"venue\": \"Test Ground\",\n  \"oversLimit\": 20,\n  \"teamAId\": {{teamId}},\n  \"teamBId\": {{teamBId}},\n  \"battingFirstTeamId\": {{teamId}}\n}" },
+            "url": "{{baseUrl}}/api/matches"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('match is created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('createdMatchId', pm.response.json().id);"] } }]
+        }
+      ]
+    }
+  ]
+}
